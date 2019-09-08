@@ -29,9 +29,11 @@ tick_length: tick length in pixels
 tick_style: "i" for protruding into the graph, "o" for protruding out of the graph, "io" for going both ways
 tick_color: tick hex color
 display_labels: boolean; do we label the coordinates or not?
-label_style: {fontFamily, fontSize, fill, align, textBaseline}
-label_positions: can be axis, top, bottom, or dynamic (switches between, permitted to modify align/textBaseline accordingly)
+label_style: {fontFamily, fontSize, fill}
+label_align: "N", "NW", "W", "SW", "S", "SE", "E", "NE", or the forbidden "C"
+label_position: can be axis, top, bottom, or dynamic (switches between, permitted to modify align/textBaseline accordingly)
 label_padding: pixels of label padding
+label_function: convert x/y values to string
 
 coords is just an array of x/y values in Cartesian space.
 scissor is a box around the gridlines which cuts out anything beyond the rectangle (x0, y0) to (x1, y1).
