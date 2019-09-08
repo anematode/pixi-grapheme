@@ -32,6 +32,14 @@
 <script src="../build/grapheme.js"></script>
 <script>
 let context = new Grapheme.Context({container_div: document.getElementById("grapheme-container")});
+let gridlines = new Grapheme.RegularGridlines(context);
+
+function drawFrame() {
+  //context.drawFrame();
+  requestAnimationFrame(drawFrame);
+}
+
+drawFrame();
 </script>
 </body>
 

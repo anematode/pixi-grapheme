@@ -303,7 +303,7 @@ var Grapheme = (function (exports) {
       this.context = grapheme_context;
       this.pixi_app = grapheme_context.pixi_app;
       this.container = new PIXI.Container();
-      this.pixi_app.addChild(this.container);
+      this.pixi_app.stage.addChild(this.container);
 
       this.id = getID();
       this.precedence = select(params.precedence, 1);
@@ -350,7 +350,7 @@ var Grapheme = (function (exports) {
     }
 
     drawFrame() {
-
+      this.elements.forEach(elem => elem.update());
     }
 
     get backgroundColor() {
@@ -731,9 +731,368 @@ var Grapheme = (function (exports) {
     }
   }
 
+  /* Unicode characters for exponent signs, LOL */
+  const exponent_reference = {
+    '-': String.fromCharCode(8315),
+    '0': String.fromCharCode(8304),
+    '1': String.fromCharCode(185),
+    '2': String.fromCharCode(178),
+    '3': String.fromCharCode(179),
+    '4': String.fromCharCode(8308),
+    '5': String.fromCharCode(8309),
+    '6': String.fromCharCode(8310),
+    '7': String.fromCharCode(8311),
+    '8': String.fromCharCode(8312),
+    '9': String.fromCharCode(8313)
+  };
+
+  /* Convert a digit into its exponent form */
+  function convert_char(c) {
+    return exponent_reference[c];
+  }
+
+  /* Convert an integer into its exponent form (of Unicode characters) */
+  function exponentify(integer) {
+    assert(isInteger(integer), "needs to be an integer");
+
+    let stringi = integer + '';
+    let out = '';
+
+    for (let i = 0; i < stringi.length; ++i) {
+      out += convert_char(stringi[i]);
+    }
+
+    return out;
+  }
+
+  // Credit: https://stackoverflow.com/a/20439411
+  /* Turns a float into a pretty float by removing dumb floating point things */
+  function beautifyFloat(f, prec=12) {
+    let strf = f.toFixed(prec);
+    if (strf.includes('.')) {
+      return strf.replace(/\.?0+$/g,'');
+    } else {
+      return strf;
+    }
+  }
+
+  // Multiplication character
+  const CDOT = String.fromCharCode(183);
+
+  const DEFAULT_LABEL_FUNCTION = x => {
+    if (x === 0) return "0"; // special case
+    else if (Math.abs(x) < 1e5 && Math.abs(x) > 1e-5)
+      // non-extreme floats displayed normally
+      return beautifyFloat(x);
+    else {
+      // scientific notation for the very fat and very small!
+
+      let exponent = Math.floor(Math.log10(Math.abs(x)));
+      let mantissa = x / (10 ** exponent);
+
+      let prefix = (isApproxEqual(mantissa,1) ? '' :
+        (beautifyFloat(mantissa, 8) + CDOT));
+      let exponent_suffix = "10" + exponentify(exponent);
+
+      return prefix + exponent_suffix;
+    }
+  };
+
+  const gridlines_style_default = {
+    display_lines: true,
+    line_color: 0x000000,
+    display_ticks: true,
+    tick_style: "i",
+    tick_thickness: 2,
+    tick_length: 10,
+    tick_color: 0x000000,
+    display_labels: true,
+    label_style: {fontFamily: "Arial", fontSize: "10px", fill: 0x000000},
+    label_position: "dynamic",
+    label_padding: 2,
+    label_function: DEFAULT_LABEL_FUNCTION
+  };
+
+  class Gridlines extends ContextElement {
+    constructor(context, params={}) {
+      super(context);
+
+      if (params.style) ;
+
+      this.gridlines_x = {
+        s1: {
+          style: mergeDeep({label_align: "S", line_thickness: 2}, gridlines_style_default),
+          coords: []
+        },
+        s2: {
+          style: mergeDeep({label_align: "S", line_thickness: 1}, gridlines_style_default),
+          coords: []
+        },
+        s3: {
+          style: mergeDeep({label_align: "S", line_thickness: 0.5, display_labels: false}, gridlines_style_default),
+          coords: []
+        }
+      };
+
+      this.gridlines_y = {
+        s1: {
+          style: mergeDeep({label_align: "E", line_thickness: 2}, gridlines_style_default),
+          coords: []
+        },
+        s2: {
+          style: mergeDeep({label_align: "E", line_thickness: 1}, gridlines_style_default),
+          coords: []
+        },
+        s3: {
+          style: mergeDeep({label_align: "E", line_thickness: 0.5, display_labels: false}, gridlines_style_default),
+          coords: []
+        }
+      };
+
+      this.scissor = {x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity};
+      this.scissor_box_style = {display: false, line_thickness: 2, color: 0x000000};
+
+      this._gridlines_x_objs = {s1: null, s2: null, s3: null};
+      this._gridlines_y_objs = {s1: null, s2: null, s3: null};
+      this._scissor_box_obj = null;
+      this._text_objs = [];
+    }
+
+    clearGridlines() {
+      let keys1 = [this.gridlines_x, this.gridlines_y];
+      let keys2 = ["s1", "s2", "s3"];
+
+      for (let i = 0; i < 3; ++i) {
+        keys1[keys2[i]] = [];
+      }
+    }
+
+    updateObjects() {
+      let styles = ["s1", "s2", "s3"];
+
+      // X
+      for (let i = 0; i < styles.length; ++i) {
+        let key = styles[i];
+        let curr_lines = this._gridlines_x_objs[key];
+
+        if (!curr_lines) {
+           curr_lines = this._gridlines_x_objs[key] = new PIXI.Graphics();
+           this.container.addChild(curr_lines);
+        }
+
+        curr_lines.clear();
+
+        let curr_style = this.gridlines_x[key].style;
+        let curr_coords = this.gridlines_x[key].coords;
+
+        curr_lines.lineStyle(curr_style.line_thickness, curr_style.line_color, 1);
+
+        for (let j = 0; j < curr_coords.length; ++j) {
+          let cartesian_coord = curr_coords[j];
+          let coord = this.context.cartesianToPixelX(cartesian_coord);
+
+          if (coord < this.scissor.x0 || coord > this.scissor.x1) continue;
+
+          curr_lines.moveTo(coord, Math.max(this.scissor.y0, 0));
+          curr_lines.lineTo(coord, Math.min(this.scissor.y1, this.context.height));
+        }
+      }
+
+      // Y
+      for (let i = 0; i < styles.length; ++i) {
+        let key = styles[i];
+        let curr_lines = this._gridlines_y_objs[key];
+
+        if (!curr_lines) {
+           curr_lines = this._gridlines_y_objs[key] = new PIXI.Graphics();
+           this.container.addChild(curr_lines);
+        }
+
+        curr_lines.clear();
+
+        let curr_style = this.gridlines_y[key].style;
+        let curr_coords = this.gridlines_y[key].coords;
+
+        curr_lines.lineStyle(curr_style.line_thickness, curr_style.line_color, 1);
+
+        for (let j = 0; j < curr_coords.length; ++j) {
+          let cartesian_coord = curr_coords[j];
+          let coord = this.context.cartesianToPixelY(cartesian_coord);
+
+          if (coord < this.scissor.y0 || coord > this.scissor.y1) continue;
+
+          curr_lines.moveTo(Math.max(this.scissor.x0, 0), coord);
+          curr_lines.lineTo(Math.min(this.scissor.x1, this.context.width), coord);
+        }
+      }
+    }
+  }
+
+  // Helper function: Find the nearest value to val in the array arr
+  function findNearestValueIndex(arr, val) {
+    let closest = arr[0];
+
+    for (let i = 1; i < arr.length; ++i) {
+      if (Math.abs(arr[i] - val) < Math.abs(closest - val)) {
+        return i;
+      }
+    }
+
+    return 0;
+  }
+
+  class RegularGridlines extends Gridlines {
+    constructor(context, params = {}) {
+      super(context, params);
+
+      this.normal = {ideal_dist: 140};
+      this.thin = {ideal_dist: 50};
+
+      // Types of finer demarcation subdivisions: default is subdivide into 2, into 5, and into 10
+      this.subdivisions = select(params.subdivisions, [
+        {normal: 2, thin: [4]},
+        {normal: 5, thin: [5, 10]},
+        {normal: 1, thin: [5]}
+      ]);
+
+      this.gridline_limit = select(params.gridline_limit, 500);
+      // force equal thin subdivisions in x and y directions
+      this.force_equal_thin_div = true;
+    }
+
+    computeGridlines() {
+      this.clearGridlines();
+
+      let ideal_xy = this.context.pixelToCartesianV(this.normal.ideal_dist, this.normal.ideal_dist);
+
+      // unpack the values
+      let ideal_x_normal_spacing = Math.abs(ideal_xy.x);
+
+      // Math.abs shouldn't ever do anything, but it would be catastrophic
+      // if this was somehow negative due to some dumb error of mine
+      // (This might happen if the ideal inter-thin distance is negative)
+      let ideal_y_normal_spacing = Math.abs(ideal_xy.y);
+
+      let ixns_log10 = Math.log10(ideal_x_normal_spacing);
+      let iyns_log10 = Math.log10(ideal_y_normal_spacing);
+
+      let possible_coeffs = this.subdivisions.map(x => x.normal);
+
+      let ixns_base = 10 ** Math.floor(ixns_log10);
+      let ixns_coeff_i = findNearestValueIndex(possible_coeffs, ideal_x_normal_spacing / ixns_base);
+
+      let iyns_base = 10 ** Math.floor(iyns_log10);
+      let iyns_coeff_i = findNearestValueIndex(possible_coeffs, ideal_y_normal_spacing / ixns_base);
+
+      let true_xn_spacing = possible_coeffs[ixns_coeff_i] * ixns_base;
+      let true_yn_spacing = possible_coeffs[iyns_coeff_i] * iyns_base;
+
+      let ideal_x_thin_spacing_denom = this.context.cartesianToPixelVX(true_xn_spacing) / this.thin.ideal_dist;
+      let ideal_y_thin_spacing_denom = -this.context.cartesianToPixelVY(true_yn_spacing) / this.thin.ideal_dist;
+
+      // alias for brevity
+      let tspt_x = this.subdivisions[ixns_coeff_i].thin;
+      let tspt_y = this.subdivisions[iyns_coeff_i].thin;
+
+      // temp values
+      let x_denom = tspt_x[0];
+      let y_denom = tspt_y[0];
+
+      // go through all potential thin spacing types for x
+      for (let i = 0; i < tspt_x.length; ++i) {
+        let possible_denom = tspt_x[i];
+
+        // if this is more ideal of an x subdivision, use that!
+        if (Math.abs(possible_denom - ideal_x_thin_spacing_denom) <
+          Math.abs(x_denom - ideal_x_thin_spacing_denom)) {
+          x_denom = possible_denom;
+        }
+      }
+
+      for (let i = 0; i < tspt_y.length; ++i) {
+        let possible_denom = tspt_y[i];
+
+        // if this is more ideal of an y subdivision, use that!
+        if (Math.abs(possible_denom - ideal_y_thin_spacing_denom) <
+          Math.abs(y_denom - ideal_y_thin_spacing_denom)) {
+          y_denom = possible_denom;
+        }
+      }
+
+      if (this.force_equal_thin_div) {
+        // if we force the subdivisions to be equal, we defer to the one that fits better
+        if (Math.abs(y_denom - ideal_y_thin_spacing_denom) < Math.abs(x_denom - ideal_x_thin_spacing_denom)) {
+          // y is better
+          x_denom = y_denom;
+        } else {
+          // x is better (or they are the same since the inequality is strict)
+          y_denom = x_denom;
+        }
+      }
+
+      let true_xt_spacing = true_xn_spacing / x_denom;
+      let true_yt_spacing = true_yn_spacing / y_denom;
+
+      // precomputed for brevity
+      let minx = this.context.minX();
+      let miny = this.context.minY();
+      let maxx = this.context.maxX();
+      let maxy = this.context.maxY();
+
+      let thinx_start = Math.ceil(minx / true_xt_spacing);
+      let thinx_end = Math.floor(maxx / true_xt_spacing);
+      let thiny_start = Math.floor(miny / true_yt_spacing);
+      let thiny_end = Math.ceil(maxy / true_yt_spacing);
+
+      // both x and y
+      for (let i = 0, start = thinx_start, end = thinx_end, dir = 'x', denom = x_denom, spacing = true_xt_spacing; ++i < 3; start = thiny_start, end = thiny_end, dir = 'y', denom = y_denom, spacing = true_yt_spacing) {
+        assert(start <= end, "wtf happened");
+
+        for (let i = start; i <= end; ++i) {
+          // we only skip x values corresponding to normal lines if normal lines are being displayed
+          if ((i % denom === 0) && this["gridlines_" + dir].s2.display) continue;
+          this["gridlines_" + dir].s3.coords.push(i * spacing);
+        }
+      }
+
+      let normalx_start = Math.ceil(minx / true_xn_spacing);
+      let normalx_end = Math.floor(maxx / true_xn_spacing);
+      let normaly_start = Math.floor(miny / true_yn_spacing);
+      let normaly_end = Math.ceil(maxy / true_yn_spacing);
+
+      // both x and y
+      for (let j = 0, start = normalx_start, end = normalx_end, dir = 'x', spacing = true_xn_spacing;
+        ++j < 3;
+        start = normaly_start, end = normaly_end, dir = 'y', spacing = true_yn_spacing) {
+        for (let i = start; i <= end; ++i) {
+          if (!i && this["gridlines_" + dir].s1.display) continue;
+          this["gridlines_" + dir].s2.coords.push(i * spacing);
+        }
+      }
+
+      // Axis lines (a.k.a. bold lines) (if applicable)
+
+      // x
+      if (this.context.cartesianXInView(0)) {
+        this.gridlines_x.s1.coords.push(0);
+      }
+
+      // y
+      if (this.context.cartesianYInView(0)) {
+        this.gridlines_y.s1.coords.push(0);
+      }
+    }
+
+    update() {
+      this.computeGridlines();
+      this.updateObjects();
+    }
+  }
+
   exports.Context = GraphemeContext;
   exports.ContextElement = ContextElement;
   exports.IntervalFunctions = IntervalFunctions;
+  exports.RegularGridlines = RegularGridlines;
   exports.utils = utils;
 
   return exports;

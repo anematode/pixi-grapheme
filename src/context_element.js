@@ -5,7 +5,7 @@ class ContextElement {
     this.context = grapheme_context;
     this.pixi_app = grapheme_context.pixi_app;
     this.container = new PIXI.Container();
-    this.pixi_app.addChild(this.container);
+    this.pixi_app.stage.addChild(this.container);
 
     this.id = utils.getID();
     this.precedence = utils.select(params.precedence, 1);

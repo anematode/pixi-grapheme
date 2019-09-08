@@ -126,30 +126,110 @@ class Gridlines extends ContextElement {
 
     this.gridlines_x = {
       s1: {
-        style: utils.mergeDeep({label_align: "S", line_thickness: 2}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "S", line_thickness: 2}, gridlines_style_default),
+        coords: []
       },
       s2: {
-        style: utils.mergeDeep({label_align: "S", line_thickness: 1}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "S", line_thickness: 1}, gridlines_style_default),
+        coords: []
       },
       s3: {
-        style: utils.mergeDeep({label_align: "S", line_thickness: 0.5, display_labels: false}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "S", line_thickness: 0.5, display_labels: false}, gridlines_style_default),
+        coords: []
       }
     };
 
     this.gridlines_y = {
       s1: {
-        style: utils.mergeDeep({label_align: "E", line_thickness: 2}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "E", line_thickness: 2}, gridlines_style_default),
+        coords: []
       },
       s2: {
-        style: utils.mergeDeep({label_align: "E", line_thickness: 1}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "E", line_thickness: 1}, gridlines_style_default),
+        coords: []
       },
       s3: {
-        style: utils.mergeDeep({label_align: "E", line_thickness: 0.5, display_labels: false}, gridlines_style_default)
+        style: utils.mergeDeep({label_align: "E", line_thickness: 0.5, display_labels: false}, gridlines_style_default),
+        coords: []
       }
     }
 
     this.scissor = {x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity};
     this.scissor_box_style = {display: false, line_thickness: 2, color: 0x000000};
+
+    this._gridlines_x_objs = {s1: null, s2: null, s3: null};
+    this._gridlines_y_objs = {s1: null, s2: null, s3: null}
+    this._scissor_box_obj = null;
+    this._text_objs = [];
+  }
+
+  clearGridlines() {
+    let keys1 = [this.gridlines_x, this.gridlines_y];
+    let keys2 = ["s1", "s2", "s3"];
+
+    for (let i = 0; i < 3; ++i) {
+      keys1[keys2[i]] = [];
+    }
+  }
+
+  updateObjects() {
+    let styles = ["s1", "s2", "s3"];
+
+    // X
+    for (let i = 0; i < styles.length; ++i) {
+      let key = styles[i];
+      let curr_lines = this._gridlines_x_objs[key];
+
+      if (!curr_lines) {
+         curr_lines = this._gridlines_x_objs[key] = new PIXI.Graphics();
+         this.container.addChild(curr_lines);
+      }
+
+      curr_lines.clear();
+
+      let curr_style = this.gridlines_x[key].style;
+      let curr_coords = this.gridlines_x[key].coords;
+
+      curr_lines.lineStyle(curr_style.line_thickness, curr_style.line_color, 1);
+
+      for (let j = 0; j < curr_coords.length; ++j) {
+        let cartesian_coord = curr_coords[j];
+        let coord = this.context.cartesianToPixelX(cartesian_coord);
+
+        if (coord < this.scissor.x0 || coord > this.scissor.x1) continue;
+
+        curr_lines.moveTo(coord, Math.max(this.scissor.y0, 0));
+        curr_lines.lineTo(coord, Math.min(this.scissor.y1, this.context.height));
+      }
+    }
+
+    // Y
+    for (let i = 0; i < styles.length; ++i) {
+      let key = styles[i];
+      let curr_lines = this._gridlines_y_objs[key];
+
+      if (!curr_lines) {
+         curr_lines = this._gridlines_y_objs[key] = new PIXI.Graphics();
+         this.container.addChild(curr_lines);
+      }
+
+      curr_lines.clear();
+
+      let curr_style = this.gridlines_y[key].style;
+      let curr_coords = this.gridlines_y[key].coords;
+
+      curr_lines.lineStyle(curr_style.line_thickness, curr_style.line_color, 1);
+
+      for (let j = 0; j < curr_coords.length; ++j) {
+        let cartesian_coord = curr_coords[j];
+        let coord = this.context.cartesianToPixelY(cartesian_coord);
+
+        if (coord < this.scissor.y0 || coord > this.scissor.y1) continue;
+
+        curr_lines.moveTo(Math.max(this.scissor.x0, 0), coord);
+        curr_lines.lineTo(Math.min(this.scissor.x1, this.context.width), coord);
+      }
+    }
   }
 }
 

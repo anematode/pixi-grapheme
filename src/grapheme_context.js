@@ -24,7 +24,7 @@ class GraphemeContext {
   }
 
   drawFrame() {
-
+    this.elements.forEach(elem => elem.update());
   }
 
   get backgroundColor() {
